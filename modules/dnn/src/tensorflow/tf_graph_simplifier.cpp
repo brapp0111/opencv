@@ -69,9 +69,15 @@ public:
         return net.node_size();
     }
 
-    virtual std::string getNodeName(int idx) const CV_OVERRIDE
+    virtual int getNumOutputs(int nodeId) const CV_OVERRIDE
     {
-        return net.node(idx).name();
+        return 1;
+    }
+
+    virtual std::string getOutputName(int nodeId, int outId) const CV_OVERRIDE
+    {
+        CV_Assert(outId == 0);
+        return net.node(nodeId).name();
     }
 
     virtual void removeNode(int idx) CV_OVERRIDE
@@ -676,6 +682,15 @@ void RemoveIdentityOps(tensorflow::GraphDef& net)
             IdentityOpsMap::iterator it = identity_ops.find(input_op_name);
 
             if (it != identity_ops.end()) {
+                // In case of Identity after Identity
+                while (true)
+                {
+                    IdentityOpsMap::iterator nextIt = identity_ops.find(it->second);
+                    if (nextIt != identity_ops.end())
+                        it = nextIt;
+                    else
+                        break;
+                }
                 layer->set_input(input_id, it->second);
             }
         }
@@ -841,7 +856,7 @@ void sortByExecutionOrder(tensorflow::GraphDef& net)
             nodesToAdd.push_back(i);
         else
         {
-            if (node.op() == "Merge" || node.op() == "RefMerge")
+            if (node.op() == "Merge" || node.op() == "RefMerge" || node.op() == "NoOp")
             {
                 int numControlEdges = 0;
                 for (int j = 0; j < numInputsInGraph; ++j)
@@ -890,7 +905,7 @@ void removePhaseSwitches(tensorflow::GraphDef& net)
     {
         const tensorflow::NodeDef& node = net.node(i);
         nodesMap.insert(std::make_pair(node.name(), i));
-        if (node.op() == "Switch" || node.op() == "Merge")
+        if (node.op() == "Switch" || node.op() == "Merge" || node.op() == "NoOp")
         {
             CV_Assert(node.input_size() > 0);
             // Replace consumers' inputs.
@@ -908,7 +923,7 @@ void removePhaseSwitches(tensorflow::GraphDef& net)
                 }
             }
             nodesToRemove.push_back(i);
-            if (node.op() == "Merge" || node.op() == "Switch")
+            if (node.op() == "Merge" || node.op() == "Switch" || node.op() == "NoOp")
                 mergeOpSubgraphNodes.push(i);
         }
     }
